@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
 import { Search, Plus, ChevronDown } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 // Mock projects
 const projects = [
@@ -185,6 +187,7 @@ const ticketColumns = [
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const router = useRouter();
   
   // State to track visible ticket count per column
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({
@@ -197,6 +200,9 @@ export default function DashboardPage() {
   // State for project filter
   const [selectedProject, setSelectedProject] = useState('all');
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  
+  // State for search
+  const [searchQuery, setSearchQuery] = useState('');
 
   const handleSeeMore = (columnId: string) => {
     setVisibleCounts(prev => ({
@@ -205,13 +211,32 @@ export default function DashboardPage() {
     }));
   };
 
-  // Filter tickets by selected project
-  const filteredColumns = ticketColumns.map(column => ({
-    ...column,
-    tickets: selectedProject === 'all' 
-      ? column.tickets 
-      : column.tickets.filter(ticket => ticket.project === selectedProject),
-  }));
+  // Filter tickets by selected project and search query
+  const filteredColumns = useMemo(() => {
+    return ticketColumns.map(column => {
+      let tickets = column.tickets;
+      
+      // Filter by project
+      if (selectedProject !== 'all') {
+        tickets = tickets.filter(ticket => ticket.project === selectedProject);
+      }
+      
+      // Filter by search query
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        tickets = tickets.filter(ticket => 
+          ticket.title.toLowerCase().includes(query) ||
+          ticket.author.toLowerCase().includes(query) ||
+          ticket.labels.some(label => label.toLowerCase().includes(query))
+        );
+      }
+      
+      return {
+        ...column,
+        tickets,
+      };
+    });
+  }, [selectedProject, searchQuery]);
 
   // Role-based column filtering
   // QA/Admin: See all columns
@@ -222,10 +247,13 @@ export default function DashboardPage() {
 
   // Handle self-assignment for developers
   const handleSelfAssign = (ticketId: string) => {
-    // TODO: Implement API call to assign ticket to current user
-    console.log(`Assigning ticket ${ticketId} to ${user?.name}`);
-    // In production, this would call your backend API
-    // await ticketService.assignTicket(ticketId, user.id);
+    toast.success(`Ticket ${ticketId} assigned to you!`);
+    // In production: await ticketService.assignTicket(ticketId, user.id);
+  };
+  
+  // Handle ticket click
+  const handleTicketClick = (ticketId: string) => {
+    router.push(`/tickets/${ticketId}`);
   };
 
   return (
@@ -239,7 +267,9 @@ export default function DashboardPage() {
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Search"
+                  placeholder="Search tickets..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-black"
                 />
               </div>
@@ -321,6 +351,7 @@ export default function DashboardPage() {
                   {column.tickets.slice(0, visibleCounts[column.id]).map((ticket) => (
                     <div
                       key={ticket.id}
+                      onClick={() => handleTicketClick(ticket.id)}
                       className="bg-white p-2.5 rounded-lg border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
                     >
                       {/* Ticket Title */}
@@ -354,13 +385,19 @@ export default function DashboardPage() {
                       <div className="mt-2 flex items-center justify-end">
                         {user?.role === 'developer' && column.id === 'pending' ? (
                           <button 
-                            onClick={() => handleSelfAssign(ticket.id)}
-                            className="text-xs text-orange-600 hover:text-orange-700 font-medium"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelfAssign(ticket.id);
+                            }}
+                            className="text-xs text-orange-600 hover:text-orange-700 underline font-medium"
                           >
-                            Assign yourself
+                            assign yourself
                           </button>
                         ) : (
-                          <button className="text-gray-400 hover:text-gray-600">
+                          <button 
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                             </svg>
