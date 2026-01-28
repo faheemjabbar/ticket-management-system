@@ -30,8 +30,12 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# local env files (IMPORTANT: Never commit these!)
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # vercel
 .vercel
@@ -39,3 +43,61 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# IDEs and editors
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.cache
+
+# Build artifacts
+dist/
+build/
+.turbo/
+
+# Lock files (keep only one)
+# Uncomment the one you DON'T use:
+# package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Audit and cleanup reports (temporary files)
+CLEANUP_SUMMARY.md
+UNUSED_FILES_AUDIT.md
+
+# Keep these documentation files - they're valuable for the project:
+AUTH_IMPLEMENTATION_GUIDE.md
+AUTH_SYSTEM_SUMMARY.md
+DEPLOYMENT_CHECKLIST.md
+LAYOUT_COMPONENTS_GUIDE.md
+MOCK_CREDENTIALS.md
+MOCK_USERS_GUIDE.md
+QUICK_START.md
+SECURITY_AUDIT_REPORT.md
+README_AUTH.md
+README.md

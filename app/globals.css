@@ -24,3 +24,30 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Custom select dropdown styling */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+select::-ms-expand {
+  display: none;
+}
+
+select option {
+  padding: 8px 12px;
+  background-color: white;
+  color: black;
+}
+
+select option:hover {
+  background-color: #e5e7eb !important;
+  background: #e5e7eb !important;
+}
+
+select option:checked {
+  background-color: #e5e7eb;
+  background: linear-gradient(#e5e7eb, #e5e7eb);
+}
