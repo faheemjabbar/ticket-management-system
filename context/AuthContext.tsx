@@ -1,10 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 import axiosInstance from '@/lib/axios';
 import { toast } from 'react-hot-toast';
-import { isMockMode, mockLogin, mockRegister, mockGetCurrentUser } from '@/services/mockAuthService';
+// import { isMockMode, mockLogin, mockRegister, mockGetCurrentUser } from '@/services/mockAuthService';
 
 // User type definition
 export interface User {
@@ -12,6 +12,7 @@ export interface User {
   name: string;
   email: string;
   role: 'admin' | 'developer' | 'qa';
+  isActive: boolean;
 }
 
 // Auth context type
@@ -33,7 +34,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const pathname = usePathname();
 
   // Initialize auth state on mount
   useEffect(() => {
@@ -50,26 +50,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Parse stored user
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
-
-        // Optionally verify token with backend
-        try {
-          if (isMockMode()) {
-            // Use mock service
-            const response = await mockGetCurrentUser(token);
-            setUser(response.user);
-            localStorage.setItem('user', JSON.stringify(response.user));
-          } else {
-            // Use real API
-            const response = await axiosInstance.get('/api/auth/me');
-            setUser(response.data.user);
-            localStorage.setItem('user', JSON.stringify(response.data.user));
-          }
-        } catch (error) {
-          // Token invalid, clear auth state
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          setUser(null);
-        }
       }
     } catch (error) {
       console.error('Auth initialization error:', error);
@@ -81,21 +61,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Login function
   const login = async (email: string, password: string) => {
     try {
-      let response;
+      // let response;
 
-      if (isMockMode()) {
-        // Use mock service
-        response = await mockLogin(email, password);
-      } else {
+      // if (isMockMode()) {
+      //   // Use mock service
+      //   response = await mockLogin(email, password);
+      // } else {
         // Use real API
-        const res = await axiosInstance.post('/api/auth/login', {
+        console.log('🔐 Login attempt:', { email, password: '***' });
+        const res = await axiosInstance.post('/auth/login', {
           email,
           password,
         });
-        response = res.data;
-      }
+        console.log('✅ Login response:', res.data);
+        const response = res.data;
+      // }
 
-      const { token, user } = response;
+      const { access_token: token, user } = response;
 
       // Store token and user in localStorage
       localStorage.setItem('token', token);
@@ -110,6 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Redirect to dashboard
       router.push('/dashboard');
     } catch (error: any) {
+      // Log detailed error for debugging
+      console.error('❌ Login error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      
       // Show error message
       const message = error.response?.data?.message || 'Login failed. Please try again.';
       toast.error(message);
@@ -120,18 +110,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Register function
   const register = async (name: string, email: string, password: string, role: string) => {
     try {
-      if (isMockMode()) {
-        // Use mock service
-        await mockRegister({ name, email, password, role: role as any });
-      } else {
+      // if (isMockMode()) {
+      //   // Use mock service
+      //   await mockRegister({ name, email, password, role: role as any });
+      // } else {
         // Use real API
-        await axiosInstance.post('/api/auth/register', {
+        console.log('📝 Register attempt:', { name, email, role, password: '***' });
+        const res = await axiosInstance.post('/auth/register', {
           name,
           email,
           password,
           role,
         });
-      }
+        console.log('✅ Register response:', res.data);
+      // }
 
       // Show success message
       toast.success('Account created successfully!');
@@ -141,6 +133,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         router.push('/login');
       }, 1000);
     } catch (error: any) {
+      // Log detailed error for debugging
+      console.error('❌ Register error:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        statusText: error.response?.statusText
+      });
+      
       // Show error message
       const message = error.response?.data?.message || 'Registration failed. Please try again.';
       toast.error(message);

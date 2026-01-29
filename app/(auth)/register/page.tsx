@@ -39,7 +39,7 @@ const RegisterPage = () => {
             <Ticket className="text-white w-5 h-5 transform -rotate-45" />
           </div>
           <span className="text-white text-lg font-bold tracking-tight">
-            Tick<span className="text-[#F97316]">Flow</span>
+            Tick<span className="text-[#F97316]">Flo</span>
           </span>
         </div>
       </header>
@@ -51,7 +51,7 @@ const RegisterPage = () => {
           {/* Title */}
           <div className="text-center mb-6">
             <h1 className="text-[#0F172A] text-2xl font-extrabold mb-1">Create Account</h1>
-            <p className="text-slate-500 text-xs">Join TickFlow to manage your tickets effortlessly.</p>
+            <p className="text-slate-500 text-xs">Join TickFlo to manage your tickets effortlessly.</p>
           </div>
 
           {/* Form */}
@@ -170,7 +170,7 @@ const RegisterPage = () => {
       {/* Footer */}
       <footer className="h-14 p-4 flex items-center justify-center">
         <p className="text-slate-500 text-xs">
-          © 2026 Tickflow Inc. All rights reserved.
+          © 2026 Tickflo Inc. All rights reserved.
         </p>
       </footer>
     </div>

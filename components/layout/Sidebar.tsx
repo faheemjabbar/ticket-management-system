@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -9,10 +10,12 @@ import {
   Users, 
   Plus,
   X,
-  MessageSquare,
-  Settings
+  Settings,
+  LogOut,
+  Folder
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import CreateTicketModal from '@/components/tickets/CreateTicketModal';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -20,8 +23,9 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
-  const { user, hasRole } = useAuth();
+  const { user, hasRole, logout } = useAuth();
   const pathname = usePathname();
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const navigation = [
     {
@@ -30,15 +34,15 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       icon: LayoutDashboard,
       roles: ['admin', 'developer', 'qa'],
     },
-    {
-      name: 'Public questions',
-      href: '/tickets',
-      icon: MessageSquare,
-      roles: ['admin', 'developer', 'qa'],
-    },
   ];
 
   const staffNavigation = [
+    {
+      name: 'Projects',
+      href: '/projects',
+      icon: Folder,
+      roles: ['admin', 'qa'],
+    },
     {
       name: 'Users',
       href: '/users',
@@ -132,7 +136,10 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
           
           {/* Only show New Ticket button for QA and Admin */}
           {user && (user.role === 'qa' || user.role === 'admin') && (
-            <button className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium"
+            >
               <Plus className="w-4 h-4" />
               New Ticket
             </button>
@@ -200,7 +207,7 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         {user && (
           <div className="p-4 border-t border-gray-700 bg-[#2C3E50] flex-shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center">
+              <div className="w-10 h-10 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
                 <span className="text-white font-bold text-sm">
                   {user.name.charAt(0).toUpperCase()}
                 </span>
@@ -209,14 +216,27 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
                 <p className="text-sm font-medium text-white truncate">
                   {user.name}
                 </p>
-                <p className="text-xs text-gray-400">
-                  View profile
-                </p>
               </div>
+              <button
+                onClick={() => {
+                  logout();
+                  if (onClose) onClose();
+                }}
+                className="p-2 hover:bg-gray-700 rounded-lg transition-colors group"
+                title="Logout"
+              >
+                <LogOut className="w-4 h-4 text-gray-400 group-hover:text-red-500 transition-colors" />
+              </button>
             </div>
           </div>
         )}
       </aside>
+
+      {/* Create Ticket Modal */}
+      <CreateTicketModal 
+        isOpen={isCreateModalOpen} 
+        onClose={() => setIsCreateModalOpen(false)} 
+      />
     </>
   );
 }

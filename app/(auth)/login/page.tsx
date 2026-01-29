@@ -48,7 +48,7 @@ const LoginPage = () => {
       </header>
 
       {/* Main Login Section */}
-      <main className="flex-grow flex items-center justify-center px-4">
+      <main className="grow flex items-center justify-center px-4">
         <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden p-8 md:p-10">
           <div className="text-center mb-10">
             <h1 className="text-[#0F172A] text-3xl font-extrabold mb-2">Welcome Back</h1>
@@ -124,7 +124,7 @@ const LoginPage = () => {
       {/* Page Footer */}
       <footer className="p-6 text-center">
         <p className="text-slate-500 text-xs">
-          © 2026 Tickflow Inc. All rights reserved.
+          © 2026 Tickflo Inc. All rights reserved.
         </p>
       </footer>
     </div>
