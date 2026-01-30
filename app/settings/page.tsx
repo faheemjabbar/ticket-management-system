@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { RoleGuard } from '@/components/auth/RoleGuard';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
+import { userAPI } from '@/lib/api';
 import { 
   User, 
   Bell, 
@@ -17,19 +17,34 @@ import {
 import { toast } from 'react-hot-toast';
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security' | 'appearance'>('profile');
+  const [loading, setLoading] = useState(false);
   
   // Profile settings
   const [profileData, setProfileData] = useState({
-    name: user?.name || '',
-    email: user?.email || '',
-    role: user?.role || '',
+    name: '',
+    email: '',
+    role: '',
     bio: '',
     timezone: 'UTC',
     language: 'en',
   });
+
+  // Load user data on mount
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        name: user.name || '',
+        email: user.email || '',
+        role: user.role || '',
+        bio: user.bio || '',
+        timezone: user.timezone || 'UTC',
+        language: user.language || 'en',
+      });
+    }
+  }, [user]);
 
   // Notification settings
   const [notificationSettings, setNotificationSettings] = useState({
@@ -62,25 +77,47 @@ export default function SettingsPage() {
   });
 
   const handleSaveProfile = async () => {
+    if (!user) return;
+    
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setLoading(true);
+      const updatedUser = await userAPI.update(user.id, {
+        name: profileData.name,
+        bio: profileData.bio,
+        timezone: profileData.timezone,
+        language: profileData.language,
+      });
+      
+      // Update auth context with new user data
+      if (updateUser) {
+        updateUser(updatedUser);
+      }
+      
       toast.success('Profile updated successfully!');
-    } catch (error) {
+    } catch {
       toast.error('Failed to update profile');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSaveNotifications = async () => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setLoading(true);
+      // Note: Notification preferences would need a separate API endpoint
+      // For now, we'll just save to localStorage
+      localStorage.setItem('notificationSettings', JSON.stringify(notificationSettings));
       toast.success('Notification preferences saved!');
-    } catch (error) {
+    } catch {
       toast.error('Failed to save preferences');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleChangePassword = async () => {
+    if (!user) return;
+    
     if (!securityData.currentPassword || !securityData.newPassword) {
       toast.error('Please fill in all password fields');
       return;
@@ -95,27 +132,37 @@ export default function SettingsPage() {
     }
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setLoading(true);
+      await userAPI.changePassword(user.id, {
+        currentPassword: securityData.currentPassword,
+        newPassword: securityData.newPassword,
+      });
+      
       toast.success('Password changed successfully!');
       setSecurityData({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (error) {
-      toast.error('Failed to change password');
+    } catch {
+      toast.error('Failed to change password. Please check your current password.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSaveAppearance = async () => {
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setLoading(false);
+      // Note: Appearance settings would be saved to localStorage
+      localStorage.setItem('appearanceSettings', JSON.stringify(appearanceSettings));
       toast.success('Appearance settings saved!');
-    } catch (error) {
+    } catch {
       toast.error('Failed to save settings');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <ProtectedRoute>
-      <RoleGuard allowedRoles={['admin', 'qa', 'developer']}>
-        <DashboardLayout>
+      <DashboardLayout>
           <div className="space-y-4">
             {/* Header */}
             <div>
@@ -271,10 +318,11 @@ export default function SettingsPage() {
 
                       <button
                         onClick={handleSaveProfile}
-                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all"
+                        disabled={loading}
+                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Save className="w-4 h-4" />
-                        Save Changes
+                        {loading ? 'Saving...' : 'Save Changes'}
                       </button>
                     </div>
                   </div>
@@ -386,10 +434,11 @@ export default function SettingsPage() {
 
                       <button
                         onClick={handleSaveNotifications}
-                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all"
+                        disabled={loading}
+                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Save className="w-4 h-4" />
-                        Save Preferences
+                        {loading ? 'Saving...' : 'Save Preferences'}
                       </button>
                     </div>
                   </div>
@@ -469,10 +518,11 @@ export default function SettingsPage() {
 
                       <button
                         onClick={handleChangePassword}
-                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all"
+                        disabled={loading}
+                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Lock className="w-4 h-4" />
-                        Change Password
+                        {loading ? 'Changing...' : 'Change Password'}
                       </button>
                     </div>
                   </div>
@@ -563,10 +613,11 @@ export default function SettingsPage() {
 
                       <button
                         onClick={handleSaveAppearance}
-                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all"
+                        disabled={loading}
+                        className="mt-6 flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Save className="w-4 h-4" />
-                        Save Settings
+                        {loading ? 'Saving...' : 'Save Settings'}
                       </button>
                     </div>
                   </div>
@@ -575,7 +626,6 @@ export default function SettingsPage() {
             </div>
           </div>
         </DashboardLayout>
-      </RoleGuard>
     </ProtectedRoute>
   );
 }
