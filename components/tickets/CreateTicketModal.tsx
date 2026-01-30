@@ -3,25 +3,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import { X, Plus, Tag, Calendar, User, CheckCircle2, Zap } from 'lucide-react';
+import { X, Plus, Tag, Calendar, User } from 'lucide-react';
+import { ticketAPI, projectAPI, userAPI, type Project, type User as APIUser } from '@/lib/api';
 
 interface CreateTicketModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onTicketCreated?: () => void;
 }
-
-const projects = [
-  { id: 'ecommerce', name: 'E-Commerce Platform' },
-  { id: 'mobile-app', name: 'Mobile App' },
-  { id: 'api-service', name: 'API Service' },
-  { id: 'dashboard', name: 'Dashboard Redesign' },
-];
-
-const developers = [
-  { id: '2', name: 'John Developer'  },
-  { id: '5', name: 'Sarah Developer'},
-  { id: '6', name: 'Mike Developer'  },
-];
 
 const priorities = [
   { 
@@ -52,14 +41,19 @@ const priorities = [
 
 const suggestedLabels = ['Bug', 'Feature', 'Documentation', 'Question', 'Enhancement', 'UI/UX'];
 
-export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModalProps) {
+export default function CreateTicketModal({ isOpen, onClose, onTicketCreated }: CreateTicketModalProps) {
   const router = useRouter();
   const titleInputRef = useRef<HTMLInputElement>(null);
+  
+  // State for projects and developers
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [developers, setDevelopers] = useState<APIUser[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    priority: 'medium' as const,
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'critical',
     project: '',
     labels: [] as string[],
     assignedTo: '',
@@ -71,21 +65,39 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
   const [isAnimating, setIsAnimating] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
 
+  // Load projects and developers when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const loadData = async () => {
+        try {
+          setLoading(true);
+          const [projectsResponse, usersResponse] = await Promise.all([
+            projectAPI.getAll({ limit: 100 }),
+            userAPI.getAll({ role: 'developer', limit: 100 })
+          ]);
+          setProjects(projectsResponse.projects);
+          setDevelopers(usersResponse.users);
+        } catch {
+          toast.error('Failed to load form data');
+        } finally {
+          setLoading(false);
+        }
+      };
+      loadData();
+    }
+  }, [isOpen]);
+
   // Handle animation states
   useEffect(() => {
     if (isOpen) {
       setShouldRender(true);
-      // Disable body scroll when modal opens
       document.body.style.overflow = 'hidden';
-      // Small delay to trigger animation
       setTimeout(() => setIsAnimating(true), 10);
       setTimeout(() => titleInputRef.current?.focus(), 200);
     } else {
       setIsAnimating(false);
-      // Wait for animation to complete before unmounting
       const timer = setTimeout(() => {
         setShouldRender(false);
-        // Re-enable body scroll when modal closes
         document.body.style.overflow = 'unset';
       }, 300);
       return () => clearTimeout(timer);
@@ -117,8 +129,28 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
     setIsSubmitting(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Create ticket via API
+      const ticketData = {
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        priority: formData.priority,
+        projectId: formData.project,
+        labels: formData.labels,
+        deadline: formData.deadline || undefined,
+      };
+
+      const newTicket = await ticketAPI.create(ticketData);
+      
+      // If assigned to someone, assign the ticket
+      if (formData.assignedTo) {
+        const assignedUser = developers.find(d => d.id === formData.assignedTo);
+        if (assignedUser) {
+          await ticketAPI.assign(newTicket.id, {
+            assignedToId: assignedUser.id,
+            assignedToName: assignedUser.name,
+          });
+        }
+      }
       
       toast.success('Ticket created successfully!');
       
@@ -134,9 +166,15 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
       });
       
       handleClose();
-      router.refresh();
-    } catch (error) {
-      toast.error('Something went wrong. Please try again.');
+      
+      // Notify parent to refresh data
+      if (onTicketCreated) {
+        onTicketCreated();
+      } else {
+        router.refresh();
+      }
+    } catch {
+      toast.error('Failed to create ticket. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -205,7 +243,12 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="p-5 overflow-y-auto max-h-[calc(90vh-60px)]">
-            <div className="space-y-3.5">
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="text-gray-500 text-sm">Loading form data...</div>
+              </div>
+            ) : (
+              <div className="space-y-3.5">
               {/* Title */}
               <div>
                 <label htmlFor="title" className="block text-[10px] font-bold text-gray-900 mb-1 uppercase tracking-wide">
@@ -373,7 +416,7 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
                     id="labels"
                     value={newLabel}
                     onChange={(e) => setNewLabel(e.target.value)}
-                    onKeyPress={(e) => {
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
                         handleAddLabel();
@@ -412,7 +455,8 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
                   </div>
                 )}
               </div>
-            </div>
+              </div>
+            )}
 
             {/* Form Actions */}
             <div className="flex gap-2.5 mt-5 pt-4 border-t border-gray-200">
@@ -426,7 +470,7 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting}
+                disabled={isSubmitting || loading}
                 className="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg text-xs font-bold hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
               >
                 {isSubmitting ? (
@@ -439,7 +483,6 @@ export default function CreateTicketModal({ isOpen, onClose }: CreateTicketModal
                   </span>
                 ) : (
                   <span className="flex items-center justify-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5" />
                     Create Ticket
                   </span>
                 )}

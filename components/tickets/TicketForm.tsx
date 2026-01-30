@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { ticketAPI, projectAPI, userAPI, type Project, type User } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import { X } from 'lucide-react';
 
@@ -12,43 +13,60 @@ interface TicketFormProps {
     title: string;
     description: string;
     priority: 'low' | 'medium' | 'high' | 'critical';
-    project: string;
+    projectId: string;
     labels: string[];
-    assignedTo?: string;
+    assignedToId?: string;
     deadline?: string;
   };
   ticketId?: string;
 }
 
-const projects = [
-  { id: 'ecommerce', name: 'E-Commerce Platform' },
-  { id: 'mobile-app', name: 'Mobile App' },
-  { id: 'api-service', name: 'API Service' },
-  { id: 'dashboard', name: 'Dashboard Redesign' },
-];
-
-const developers = [
-  { id: '2', name: 'John Developer' },
-  { id: '5', name: 'Sarah Developer' },
-  { id: '6', name: 'Mike Developer' },
-];
-
 export default function TicketForm({ mode, initialData, ticketId }: TicketFormProps) {
   const router = useRouter();
   const { user } = useAuth();
+  
+  // State
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [developers, setDevelopers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const [formData, setFormData] = useState({
     title: initialData?.title || '',
     description: initialData?.description || '',
     priority: initialData?.priority || 'medium' as const,
-    project: initialData?.project || '',
+    projectId: initialData?.projectId || '',
     labels: initialData?.labels || [] as string[],
-    assignedTo: initialData?.assignedTo || '',
+    assignedToId: initialData?.assignedToId || '',
     deadline: initialData?.deadline || '',
   });
 
   const [newLabel, setNewLabel] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Load projects and developers
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        
+        // Load projects and developers in parallel
+        const [projectsResponse, usersResponse] = await Promise.all([
+          projectAPI.getAll({ limit: 100 }),
+          userAPI.getAll({ role: 'developer', limit: 100 })
+        ]);
+
+        setProjects(projectsResponse.projects);
+        setDevelopers(usersResponse.users);
+        
+      } catch {
+        toast.error('Failed to load form data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +80,7 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
       toast.error('Description is required');
       return;
     }
-    if (!formData.project) {
+    if (!formData.projectId) {
       toast.error('Project is required');
       return;
     }
@@ -70,18 +88,58 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
     setIsSubmitting(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
       if (mode === 'create') {
+        const ticketData = {
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          priority: formData.priority,
+          projectId: formData.projectId,
+          labels: formData.labels,
+          deadline: formData.deadline || undefined,
+        };
+
+        const newTicket = await ticketAPI.create(ticketData);
+        
+        // If assigned to someone, assign the ticket
+        if (formData.assignedToId) {
+          const assignedUser = developers.find(d => d.id === formData.assignedToId);
+          if (assignedUser) {
+            await ticketAPI.assign(newTicket.id, {
+              assignedToId: assignedUser.id,
+              assignedToName: assignedUser.name,
+            });
+          }
+        }
+        
         toast.success('Ticket created successfully!');
         router.push('/dashboard');
-      } else {
+      } else if (ticketId) {
+        const updateData = {
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          priority: formData.priority,
+          labels: formData.labels,
+          deadline: formData.deadline || undefined,
+        };
+
+        await ticketAPI.update(ticketId, updateData);
+        
+        // Handle assignment change
+        if (formData.assignedToId) {
+          const assignedUser = developers.find(d => d.id === formData.assignedToId);
+          if (assignedUser) {
+            await ticketAPI.assign(ticketId, {
+              assignedToId: assignedUser.id,
+              assignedToName: assignedUser.name,
+            });
+          }
+        }
+        
         toast.success('Ticket updated successfully!');
         router.push(`/tickets/${ticketId}`);
       }
-    } catch (error) {
-      toast.error('Something went wrong. Please try again.');
+    } catch {
+      toast.error('Failed to save ticket. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -112,6 +170,14 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <div className="text-gray-500">Loading form...</div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* Title */}
@@ -125,7 +191,7 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
           value={formData.title}
           onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
           placeholder="Enter ticket title"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent text-gray-800 outline-none"
           required
         />
       </div>
@@ -141,7 +207,7 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
           onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
           placeholder="Describe the issue or question in detail..."
           rows={6}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
+          className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
           required
         />
       </div>
@@ -155,9 +221,9 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
           </label>
           <select
             id="project"
-            value={formData.project}
-            onChange={(e) => setFormData(prev => ({ ...prev, project: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+            value={formData.projectId}
+            onChange={(e) => setFormData(prev => ({ ...prev, projectId: e.target.value }))}
+            className="w-full px-3 py-2 text-gray-900 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
             required
           >
             <option value="">Select a project</option>
@@ -178,7 +244,7 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
             id="priority"
             value={formData.priority}
             onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as any }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+            className="w-full px-3 py-2 text-gray-900 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
           >
             <option value="low">Low</option>
             <option value="medium">Medium</option>
@@ -193,13 +259,13 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
         {/* Assign To */}
         <div>
           <label htmlFor="assignedTo" className="block text-sm font-medium text-gray-900 mb-1">
-            Assign To (Optional)
+            Assign To
           </label>
           <select
             id="assignedTo"
-            value={formData.assignedTo}
-            onChange={(e) => setFormData(prev => ({ ...prev, assignedTo: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+            value={formData.assignedToId}
+            onChange={(e) => setFormData(prev => ({ ...prev, assignedToId: e.target.value }))}
+            className="w-full px-3 py-2 border text-gray-900 border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
           >
             <option value="">Unassigned</option>
             {developers.map(dev => (
@@ -213,14 +279,14 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
         {/* Deadline */}
         <div>
           <label htmlFor="deadline" className="block text-sm font-medium text-gray-900 mb-1">
-            Deadline (Optional)
+            Deadline 
           </label>
           <input
             type="date"
             id="deadline"
             value={formData.deadline}
             onChange={(e) => setFormData(prev => ({ ...prev, deadline: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+            className="w-full px-3 text-gray-900 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
           />
         </div>
       </div>
@@ -243,7 +309,7 @@ export default function TicketForm({ mode, initialData, ticketId }: TicketFormPr
               }
             }}
             placeholder="Add a label and press Enter"
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+            className="flex-1 px-3 py-2 border text-gray-900 border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
           />
           <button
             type="button"

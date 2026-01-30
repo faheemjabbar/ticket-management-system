@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import { X, Plus, Folder, Calendar, Users, CheckCircle2 } from 'lucide-react';
-import { mockProjects, type Project } from '@/lib/mockProjects';
+import { projectAPI, userAPI, type Project, type User } from '@/lib/api';
 
 interface ProjectModalProps {
   isOpen: boolean;
@@ -13,19 +13,13 @@ interface ProjectModalProps {
   mode: 'create' | 'edit';
 }
 
-const allUsers = [
-  { id: '1', name: 'Admin User', role: 'admin' as const },
-  { id: '2', name: 'John Developer', role: 'developer' as const },
-  { id: '3', name: 'Jane QA', role: 'qa' as const },
-  { id: '4', name: 'Sarah Developer', role: 'developer' as const },
-  { id: '5', name: 'Mike Developer', role: 'developer' as const },
-  { id: '6', name: 'Emily QA', role: 'qa' as const },
-  { id: '7', name: 'David Developer', role: 'developer' as const },
-];
-
 export default function ProjectModal({ isOpen, onClose, project, mode }: ProjectModalProps) {
   const router = useRouter();
   const nameInputRef = useRef<HTMLInputElement>(null);
+  
+  // State
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -40,6 +34,25 @@ export default function ProjectModal({ isOpen, onClose, project, mode }: Project
   const [isAnimating, setIsAnimating] = useState(false);
   const [shouldRender, setShouldRender] = useState(false);
 
+  // Load users when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      const loadUsers = async () => {
+        try {
+          setLoading(true);
+          const usersResponse = await userAPI.getAll({ limit: 100 });
+          setAllUsers(usersResponse.users);
+        } catch {
+          toast.error('Failed to load users');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadUsers();
+    }
+  }, [isOpen]);
+
   // Initialize form data when editing
   useEffect(() => {
     if (mode === 'edit' && project) {
@@ -47,8 +60,8 @@ export default function ProjectModal({ isOpen, onClose, project, mode }: Project
         name: project.name,
         description: project.description,
         status: project.status,
-        startDate: project.startDate,
-        endDate: project.endDate || '',
+        startDate: project.startDate.split('T')[0], // Convert to YYYY-MM-DD format
+        endDate: project.endDate ? project.endDate.split('T')[0] : '',
         teamMembers: project.teamMembers.map(m => m.userId),
       });
     } else {
@@ -109,19 +122,52 @@ export default function ProjectModal({ isOpen, onClose, project, mode }: Project
     setIsSubmitting(true);
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
       if (mode === 'create') {
+        const projectData = {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          status: formData.status,
+          startDate: formData.startDate,
+          endDate: formData.endDate || undefined,
+          teamMembers: formData.teamMembers.map(userId => {
+            const user = allUsers.find(u => u.id === userId);
+            return {
+              userId,
+              role: user?.role || 'developer',
+            };
+          }),
+        };
+
+        await projectAPI.create(projectData);
         toast.success('Project created successfully!');
-      } else {
+      } else if (project) {
+        // For update, include userName and assignedAt from allUsers
+        const projectData = {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          status: formData.status,
+          startDate: formData.startDate,
+          endDate: formData.endDate || undefined,
+          teamMembers: formData.teamMembers.map(userId => {
+            const user = allUsers.find(u => u.id === userId);
+            const existingMember = project.teamMembers.find(m => m.userId === userId);
+            return {
+              userId,
+              userName: user?.name || 'Unknown User',
+              role: user?.role || 'developer',
+              assignedAt: existingMember?.assignedAt || new Date().toISOString(),
+            };
+          }),
+        };
+
+        await projectAPI.update(project.id, projectData);
         toast.success('Project updated successfully!');
       }
       
       handleClose();
       router.refresh();
-    } catch (error) {
-      toast.error('Something went wrong. Please try again.');
+    } catch {
+      toast.error('Failed to save project. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -290,41 +336,47 @@ export default function ProjectModal({ isOpen, onClose, project, mode }: Project
                 <p className="text-[10px] text-gray-500 mb-2">Select team members for this project</p>
                 
                 <div className="border-2 border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
-                  <div className="space-y-2">
-                    {allUsers.map((user) => (
-                      <label
-                        key={user.id}
-                        className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={formData.teamMembers.includes(user.id)}
-                          onChange={() => toggleTeamMember(user.id)}
-                          className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
-                        />
-                        <div className="flex items-center gap-2 flex-1">
-                          <div className="w-7 h-7 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
-                            <span className="text-white font-bold text-[10px]">
-                              {user.name.charAt(0).toUpperCase()}
+                  {loading ? (
+                    <div className="text-center py-4">
+                      <div className="text-xs text-gray-500">Loading users...</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {allUsers.map((user) => (
+                        <label
+                          key={user.id}
+                          className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={formData.teamMembers.includes(user.id)}
+                            onChange={() => toggleTeamMember(user.id)}
+                            className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                          />
+                          <div className="flex items-center gap-2 flex-1">
+                            <div className="w-7 h-7 bg-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
+                              <span className="text-white font-bold text-[10px]">
+                                {user.name.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-semibold text-gray-900 truncate">{user.name}</p>
+                              <p className="text-[10px] text-gray-600 capitalize">{user.role}</p>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                              user.role === 'admin' 
+                                ? 'bg-purple-100 text-purple-700'
+                                : user.role === 'qa'
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'bg-green-100 text-green-700'
+                            }`}>
+                              {user.role.toUpperCase()}
                             </span>
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-gray-900 truncate">{user.name}</p>
-                            <p className="text-[10px] text-gray-600 capitalize">{user.role}</p>
-                          </div>
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                            user.role === 'admin' 
-                              ? 'bg-purple-100 text-purple-700'
-                              : user.role === 'qa'
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-green-100 text-green-700'
-                          }`}>
-                            {user.role.toUpperCase()}
-                          </span>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 
                 {formData.teamMembers.length > 0 && (
