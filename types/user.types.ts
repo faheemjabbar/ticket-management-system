@@ -8,7 +8,14 @@ export interface User {
   id: string;
   name: string;
   email: string;
-  role: UserRole | 'admin' | 'developer' | 'qa';
+  role: 'admin' | 'developer' | 'qa';
   avatar?: string;
-  createdAt: Date;
+  projects?: string[];
+  isActive: boolean;
+  bio?: string;
+  timezone?: string;
+  language?: string;
+  createdAt: string;
+  updatedAt?: string;
+  lastLogin?: string;
 }
