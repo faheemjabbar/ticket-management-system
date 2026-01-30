@@ -1,6 +1,7 @@
 'use client';
 
-import { AlertTriangle } from 'lucide-react';
+import { memo } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -11,9 +12,10 @@ interface ConfirmDialogProps {
   confirmText?: string;
   cancelText?: string;
   variant?: 'danger' | 'warning' | 'info';
+  isLoading?: boolean;
 }
 
-export default function ConfirmDialog({
+const ConfirmDialog = memo(function ConfirmDialog({
   isOpen,
   onClose,
   onConfirm,
@@ -22,20 +24,35 @@ export default function ConfirmDialog({
   confirmText = 'Confirm',
   cancelText = 'Cancel',
   variant = 'danger',
+  isLoading = false,
 }: ConfirmDialogProps) {
   if (!isOpen) return null;
 
   const variantStyles = {
-    danger: 'bg-red-600 hover:bg-red-700',
-    warning: 'bg-orange-600 hover:bg-orange-700',
-    info: 'bg-blue-600 hover:bg-blue-700',
+    danger: {
+      bg: 'bg-red-100',
+      text: 'text-red-600',
+      button: 'bg-red-600 hover:bg-red-700',
+    },
+    warning: {
+      bg: 'bg-orange-100',
+      text: 'text-orange-600',
+      button: 'bg-orange-600 hover:bg-orange-700',
+    },
+    info: {
+      bg: 'bg-blue-100',
+      text: 'text-blue-600',
+      button: 'bg-blue-600 hover:bg-blue-700',
+    },
   };
+
+  const styles = variantStyles[variant];
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div 
-        className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-        onClick={onClose}
+        className="fixed inset-0 backdrop-blur-sm bg-white/30 transition-all"
+        onClick={isLoading ? undefined : onClose}
       />
       
       <div className="flex min-h-full items-center justify-center p-4">
@@ -45,12 +62,8 @@ export default function ConfirmDialog({
         >
           <div className="p-6">
             <div className="flex items-start gap-4">
-              <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                variant === 'danger' ? 'bg-red-100' : variant === 'warning' ? 'bg-orange-100' : 'bg-blue-100'
-              }`}>
-                <AlertTriangle className={`w-5 h-5 ${
-                  variant === 'danger' ? 'text-red-600' : variant === 'warning' ? 'text-orange-600' : 'text-blue-600'
-                }`} />
+              <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${styles.bg}`}>
+                <AlertTriangle className={`w-5 h-5 ${styles.text}`} />
               </div>
               
               <div className="flex-1">
@@ -61,23 +74,40 @@ export default function ConfirmDialog({
                   {message}
                 </p>
               </div>
+
+              <button
+                onClick={onClose}
+                disabled={isLoading}
+                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
             <div className="flex gap-3 mt-6">
               <button
                 onClick={onClose}
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+                disabled={isLoading}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {cancelText}
               </button>
               <button
-                onClick={() => {
-                  onConfirm();
-                  onClose();
-                }}
-                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors ${variantStyles[variant]}`}
+                onClick={onConfirm}
+                disabled={isLoading}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${styles.button}`}
               >
-                {confirmText}
+                {isLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Loading...
+                  </span>
+                ) : (
+                  confirmText
+                )}
               </button>
             </div>
           </div>
@@ -85,4 +115,6 @@ export default function ConfirmDialog({
       </div>
     </div>
   );
-}
+});
+
+export default ConfirmDialog;
