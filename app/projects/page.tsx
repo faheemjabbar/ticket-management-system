@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { RoleGuard } from '@/components/auth/RoleGuard';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { mockProjects, getProjectStats, type Project } from '@/lib/mockProjects';
+import { projectAPI, ticketAPI, type Project } from '@/lib/api';
 import ProjectModal from '@/components/projects/ProjectModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { 
   Search, 
   Plus, 
@@ -17,32 +17,98 @@ import {
   CheckCircle2,
   Archive,
   Clock,
-  MoreVertical,
   Edit,
   Trash2,
   Eye
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
+interface ProjectWithStats extends Project {
+  ticketCount: {
+    total: number;
+    pending: number;
+    assigned: number;
+    closed: number;
+  };
+}
+
 export default function ProjectsPage() {
   const router = useRouter();
-  const [projects] = useState<Project[]>(mockProjects);
+  
+  // State
+  const [projects, setProjects] = useState<ProjectWithStats[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [selectedProject, setSelectedProject] = useState<ProjectWithStats | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<ProjectWithStats | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const stats = getProjectStats();
+  // Load projects and their ticket stats
+  useEffect(() => {
+    const loadProjects = async () => {
+      try {
+        setLoading(true);
+        
+        // Get all projects
+        const projectsResponse = await projectAPI.getAll({ limit: 100 });
+        
+        // Get ticket counts for each project
+        const projectsWithStats = await Promise.all(
+          projectsResponse.projects.map(async (project) => {
+            try {
+              const ticketsResponse = await ticketAPI.getAll({ 
+                projectId: project.id,
+                limit: 1000 
+              });
+              
+              const tickets = ticketsResponse.tickets;
+              const ticketCount = {
+                total: tickets.length,
+                pending: tickets.filter(t => t.status === 'pending').length,
+                assigned: tickets.filter(t => t.status === 'assigned').length,
+                closed: tickets.filter(t => t.status === 'closed').length,
+              };
+              
+              return { ...project, ticketCount };
+            } catch {
+              return { 
+                ...project, 
+                ticketCount: { total: 0, pending: 0, assigned: 0, closed: 0 } 
+              };
+            }
+          })
+        );
+        
+        setProjects(projectsWithStats);
+        
+      } catch {
+        toast.error('Failed to load projects');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProjects();
+  }, []);
+
+  // Calculate stats
+  const stats = useMemo(() => {
+    return {
+      total: projects.length,
+      active: projects.filter(p => p.status === 'active').length,
+      completed: projects.filter(p => p.status === 'completed').length,
+      archived: projects.filter(p => p.status === 'archived').length,
+    };
+  }, [projects]);
 
   // Filter projects
   const filteredProjects = useMemo(() => {
     let filtered = [...projects];
 
-    // Search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(project =>
@@ -51,7 +117,6 @@ export default function ProjectsPage() {
       );
     }
 
-    // Status filter
     if (filterStatus !== 'all') {
       filtered = filtered.filter(project => project.status === filterStatus);
     }
@@ -63,22 +128,19 @@ export default function ProjectsPage() {
     switch (status) {
       case 'active':
         return (
-          <span className="inline-flex items-center gap-1 px-10 py-1 text-green-700 rounded-lg text-xs font-bold ">
-            <Clock className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-semibold uppercase tracking-wide border border-green-200">
             Active
           </span>
         );
       case 'completed':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-bold border border-blue-300">
-            <CheckCircle2 className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] font-semibold uppercase tracking-wide border border-blue-200">
             Completed
           </span>
         );
       case 'archived':
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded-lg text-xs font-bold border border-gray-300">
-            <Archive className="w-3 h-3" />
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-50 text-gray-600 rounded text-[10px] font-semibold uppercase tracking-wide border border-gray-200">
             Archived
           </span>
         );
@@ -97,13 +159,13 @@ export default function ProjectsPage() {
     setIsModalOpen(true);
   };
 
-  const handleEditProject = (project: Project) => {
+  const handleEditProject = (project: ProjectWithStats) => {
     setModalMode('edit');
     setSelectedProject(project);
     setIsModalOpen(true);
   };
 
-  const handleDeleteProject = (project: Project) => {
+  const handleDeleteProject = (project: ProjectWithStats) => {
     setProjectToDelete(project);
     setDeleteDialogOpen(true);
   };
@@ -112,34 +174,57 @@ export default function ProjectsPage() {
     if (!projectToDelete) return;
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      setIsDeleting(true);
+      await projectAPI.delete(projectToDelete.id);
+      
+      // Remove from local state
+      setProjects(prev => prev.filter(p => p.id !== projectToDelete.id));
+      
       toast.success(`Project "${projectToDelete.name}" deleted successfully!`);
       setDeleteDialogOpen(false);
       setProjectToDelete(null);
-      router.refresh();
-    } catch (error) {
+    } catch {
       toast.error('Failed to delete project');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
+  // Helper function to format date
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <DashboardLayout>
+          <LoadingSpinner size="lg" text="Loading projects..." />
+        </DashboardLayout>
+      </ProtectedRoute>
+    );
+  }
+
   return (
     <ProtectedRoute>
-      <RoleGuard allowedRoles={['admin', 'qa']}>
-        <DashboardLayout>
-          <div className="space-y-4">
+      <DashboardLayout>
+          <div className="space-y-5">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div className="flex items-start justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Projects</h1>
-                <p className="text-sm text-gray-600 mt-1">
+                <h1 className="text-xl font-semibold text-gray-900 tracking-tight">Projects</h1>
+                <p className="text-sm text-gray-500 mt-0.5">
                   Manage and organize your projects
                 </p>
               </div>
 
               <button
                 onClick={handleCreateProject}
-                className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold transition-all"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded text-sm font-medium hover:bg-orange-700 transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 New Project
@@ -147,79 +232,77 @@ export default function ProjectsPage() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="grid grid-cols-4 gap-3">
+              <div className="bg-white rounded border border-gray-200 p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 font-semibold uppercase">Total</p>
-                    <p className="text-2xl font-bold text-gray-900 mt-1">{stats.total}</p>
+                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Total</div>
+                    <div className="text-2xl font-semibold text-gray-900 tabular-nums">{stats.total}</div>
                   </div>
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <Folder className="w-5 h-5 text-blue-600" />
+                  <div className="w-9 h-9 bg-blue-50 rounded flex items-center justify-center">
+                    <Folder className="w-4 h-4 text-blue-600" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="bg-white rounded border border-gray-200 p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 font-semibold uppercase">Active</p>
-                    <p className="text-2xl font-bold text-green-600 mt-1">{stats.active}</p>
+                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Active</div>
+                    <div className="text-2xl font-semibold text-green-600 tabular-nums">{stats.active}</div>
                   </div>
-                  <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                    <Clock className="w-5 h-5 text-green-600" />
+                  <div className="w-9 h-9 bg-green-50 rounded flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-green-600" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="bg-white rounded border border-gray-200 p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 font-semibold uppercase">Completed</p>
-                    <p className="text-2xl font-bold text-blue-600 mt-1">{stats.completed}</p>
+                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Completed</div>
+                    <div className="text-2xl font-semibold text-blue-600 tabular-nums">{stats.completed}</div>
                   </div>
-                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                  <div className="w-9 h-9 bg-blue-50 rounded flex items-center justify-center">
+                    <CheckCircle2 className="w-4 h-4 text-blue-600" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="bg-white rounded border border-gray-200 p-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600 font-semibold uppercase">Archived</p>
-                    <p className="text-2xl font-bold text-gray-600 mt-1">{stats.archived}</p>
+                    <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Archived</div>
+                    <div className="text-2xl font-semibold text-gray-600 tabular-nums">{stats.archived}</div>
                   </div>
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                    <Archive className="w-5 h-5 text-gray-600" />
+                  <div className="w-9 h-9 bg-gray-50 rounded flex items-center justify-center">
+                    <Archive className="w-4 h-4 text-gray-600" />
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex flex-col md:flex-row gap-3">
-                {/* Search */}
+            <div className="bg-white rounded border border-gray-200 p-3">
+              <div className="flex gap-2">
                 <div className="flex-1">
                   <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                     <input
                       type="text"
                       placeholder="Search projects..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                      className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded text-sm text-gray-900 placeholder:text-gray-400 focus:ring-1 focus:ring-orange-500 focus:border-orange-500 outline-none"
                     />
                   </div>
                 </div>
 
-                {/* Status Filter */}
-                <div className="w-full md:w-48">
+                <div className="w-40">
                   <select
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:ring-1 focus:ring-orange-500 focus:border-orange-500 outline-none"
                   >
                     <option value="all">All Status</option>
                     <option value="active">Active</option>
@@ -231,91 +314,86 @@ export default function ProjectsPage() {
             </div>
 
             {/* Projects Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-3">
               {filteredProjects.map((project) => (
                 <div
                   key={project.id}
-                  className="bg-white rounded-lg border border-gray-200 hover:shadow-lg transition-all cursor-pointer group"
+                  className="bg-white rounded border border-gray-200 hover:border-gray-300 transition-colors cursor-pointer group"
                   onClick={() => handleViewProject(project.id)}
                 >
                   {/* Card Header */}
-                  <div className="p-4 border-b border-gray-200">
+                  <div className="p-3 border-b border-gray-100">
                     <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                          <Folder className="w-5 h-5 text-orange-600" />
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="w-8 h-8 bg-orange-50 rounded flex items-center justify-center flex-shrink-0">
+                          <Folder className="w-4 h-4 text-orange-600" />
                         </div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-gray-900 group-hover:text-orange-600 transition-colors">
-                            {project.name}
-                          </h3>
-                          {getStatusBadge(project.status)}
-                        </div>
+                        <h3 className="text-sm font-semibold text-gray-900 group-hover:text-orange-600 transition-colors truncate">
+                          {project.name}
+                        </h3>
                       </div>
+                      {getStatusBadge(project.status)}
                     </div>
-                    <p className="text-xs text-gray-600 line-clamp-2 mt-4">
+                    <p className="text-xs text-gray-600 line-clamp-2 leading-relaxed">
                       {project.description}
                     </p>
                   </div>
 
                   {/* Card Body */}
-                  <div className="p-4 space-y-3">
-                    {/* Team Members */}
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-gray-400" />
-                      <span className="text-xs text-gray-600">
-                        {project.teamMembers.length} team member{project.teamMembers.length !== 1 ? 's' : ''}
-                      </span>
+                  <div className="p-3 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <Users className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <span>{project.teamMembers.length} member{project.teamMembers.length !== 1 ? 's' : ''}</span>
                     </div>
 
-                    {/* Dates */}
-                    <div className="flex items-center gap-2">
-                      <Calendar className="w-4 h-4 text-gray-400" />
-                      <span className="text-xs text-gray-600">
-                        {project.startDate} {project.endDate && `- ${project.endDate}`}
+                    <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <span className="truncate">
+                        {formatDate(project.startDate)} {project.endDate && `— ${formatDate(project.endDate)}`}
                       </span>
                     </div>
 
                     {/* Ticket Stats */}
-                    <div className="grid grid-cols-4 gap-2 pt-3 border-t border-gray-100">
+                    <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-gray-100">
                       <div className="text-center">
-                        <p className="text-lg font-bold text-gray-900">{project.ticketCount.total}</p>
-                        <p className="text-[10px] text-gray-500 uppercase">Total</p>
+                        <div className="text-base font-semibold text-gray-900 tabular-nums">{project.ticketCount.total}</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wide font-medium">Total</div>
                       </div>
                       <div className="text-center">
-                        <p className="text-lg font-bold text-orange-600">{project.ticketCount.pending}</p>
-                        <p className="text-[10px] text-gray-500 uppercase">Pending</p>
+                        <div className="text-base font-semibold text-orange-600 tabular-nums">{project.ticketCount.pending}</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wide font-medium">Pending</div>
                       </div>
                       <div className="text-center">
-                        <p className="text-lg font-bold text-blue-600">{project.ticketCount.assigned}</p>
-                        <p className="text-[10px] text-gray-500 uppercase">Assigned</p>
+                        <div className="text-base font-semibold text-blue-600 tabular-nums">{project.ticketCount.assigned}</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wide font-medium">Assigned</div>
                       </div>
                       <div className="text-center">
-                        <p className="text-lg font-bold text-green-600">{project.ticketCount.closed}</p>
-                        <p className="text-[10px] text-gray-500 uppercase">Closed</p>
+                        <div className="text-base font-semibold text-green-600 tabular-nums">{project.ticketCount.closed}</div>
+                        <div className="text-[9px] text-gray-500 uppercase tracking-wide font-medium">Closed</div>
                       </div>
                     </div>
                   </div>
 
                   {/* Card Footer */}
-                  <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                  <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleViewProject(project.id);
                       }}
-                      className="text-xs font-semibold text-orange-600 hover:text-orange-700 flex items-center gap-1"
+                      className="text-xs font-medium text-orange-600 hover:text-orange-700 flex items-center gap-1"
                     >
                       <Eye className="w-3 h-3" />
                       View Details
                     </button>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-0.5">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           handleEditProject(project);
                         }}
-                        className="p-1.5 hover:bg-gray-200 rounded transition-colors"
+                        className="p-1 hover:bg-gray-200 rounded transition-colors"
+                        title="Edit project"
                       >
                         <Edit className="w-3.5 h-3.5 text-gray-600" />
                       </button>
@@ -324,7 +402,8 @@ export default function ProjectsPage() {
                           e.stopPropagation();
                           handleDeleteProject(project);
                         }}
-                        className="p-1.5 hover:bg-red-100 rounded transition-colors"
+                        className="p-1 hover:bg-red-50 rounded transition-colors"
+                        title="Delete project"
                       >
                         <Trash2 className="w-3.5 h-3.5 text-red-600" />
                       </button>
@@ -336,15 +415,15 @@ export default function ProjectsPage() {
 
             {/* Empty State */}
             {filteredProjects.length === 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                <Folder className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-bold text-gray-900 mb-2">No projects found</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  {searchQuery ? 'Try adjusting your search' : 'Get started by creating your first project'}
+              <div className="bg-white rounded border border-gray-200 p-8 text-center">
+                <Folder className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <h3 className="text-base font-semibold text-gray-900 mb-1">No projects found</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  {searchQuery ? 'Try adjusting your search criteria' : 'Get started by creating your first project'}
                 </p>
                 <button
                   onClick={handleCreateProject}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm font-semibold"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded text-sm font-medium hover:bg-orange-700 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   Create Project
@@ -367,12 +446,13 @@ export default function ProjectsPage() {
             onClose={() => setDeleteDialogOpen(false)}
             onConfirm={confirmDelete}
             title="Delete Project"
-            message={`Are you sure you want to delete "${projectToDelete?.name}"? This action cannot be undone.`}
-            confirmText="Delete"
+            message={`Are you sure you want to delete "${projectToDelete?.name}"? This action cannot be undone and will remove all associated data.`}
+            confirmText="Delete Project"
+            cancelText="Cancel"
             variant="danger"
+            isLoading={isDeleting}
           />
         </DashboardLayout>
-      </RoleGuard>
-    </ProtectedRoute>
-  );
+      </ProtectedRoute>
+    );
 }
