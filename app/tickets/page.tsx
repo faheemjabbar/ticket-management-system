@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
-import { mockTickets } from '@/lib/mockTickets';
+import { ticketAPI, projectAPI, type Ticket, type Project } from '@/lib/api';
 import PriorityBadge from '@/components/ui/PriorityBadge';
 import StatusBadge from '@/components/ui/StatusBadge';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { 
   Search, 
   Plus, 
@@ -18,20 +19,13 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 type ViewMode = 'grid' | 'table';
 type SortField = 'createdAt' | 'priority' | 'status' | 'title';
 type SortOrder = 'asc' | 'desc';
 
 const ITEMS_PER_PAGE = 10;
-
-const projects = [
-  { id: 'all', name: 'All Projects' },
-  { id: 'ecommerce', name: 'E-Commerce Platform' },
-  { id: 'mobile-app', name: 'Mobile App' },
-  { id: 'api-service', name: 'API Service' },
-  { id: 'dashboard', name: 'Dashboard Redesign' },
-];
 
 const statuses = [
   { id: 'all', name: 'All Statuses' },
@@ -53,6 +47,10 @@ export default function TicketsListPage() {
   const router = useRouter();
   const { user } = useAuth();
   
+  // State
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [projects, setProjects] = useState<(Project & { id: string })[]>([]);
+  const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProject, setSelectedProject] = useState('all');
@@ -63,35 +61,66 @@ export default function TicketsListPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showFilters, setShowFilters] = useState(false);
 
+  // Load data on component mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        
+        // Load tickets and projects in parallel
+        const [ticketsResponse, projectsResponse] = await Promise.all([
+          ticketAPI.getAll({ limit: 1000 }), // Get all tickets for client-side filtering
+          projectAPI.getAll({ limit: 100 })
+        ]);
+
+        setTickets(ticketsResponse.tickets);
+
+        // Add "All Projects" option to projects list
+        const projectsWithAll = [
+          { id: 'all', name: 'All Projects', description: '', status: 'active' as const, createdBy: '', teamMembers: [], startDate: '', createdAt: '', updatedAt: '' },
+          ...projectsResponse.projects
+        ];
+        setProjects(projectsWithAll);
+        
+      } catch {
+        toast.error('Failed to load tickets data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
+
   // Filter and sort tickets
   const filteredAndSortedTickets = useMemo(() => {
-    let tickets = [...mockTickets];
+    let filteredTickets = [...tickets];
 
     // Apply filters
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      tickets = tickets.filter(ticket =>
+      filteredTickets = filteredTickets.filter(ticket =>
         ticket.title.toLowerCase().includes(query) ||
         ticket.description.toLowerCase().includes(query) ||
-        ticket.author.toLowerCase().includes(query) ||
+        ticket.authorName.toLowerCase().includes(query) ||
         ticket.labels.some(label => label.toLowerCase().includes(query))
       );
     }
 
     if (selectedProject !== 'all') {
-      tickets = tickets.filter(ticket => ticket.projectId === selectedProject);
+      filteredTickets = filteredTickets.filter(ticket => ticket.projectId === selectedProject);
     }
 
     if (selectedStatus !== 'all') {
-      tickets = tickets.filter(ticket => ticket.status === selectedStatus);
+      filteredTickets = filteredTickets.filter(ticket => ticket.status === selectedStatus);
     }
 
     if (selectedPriority !== 'all') {
-      tickets = tickets.filter(ticket => ticket.priority === selectedPriority);
+      filteredTickets = filteredTickets.filter(ticket => ticket.priority === selectedPriority);
     }
 
     // Apply sorting
-    tickets.sort((a, b) => {
+    filteredTickets.sort((a, b) => {
       let comparison = 0;
       
       switch (sortField) {
@@ -107,15 +136,15 @@ export default function TicketsListPage() {
           break;
         case 'createdAt':
         default:
-          comparison = a.createdAt.localeCompare(b.createdAt);
+          comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
           break;
       }
 
       return sortOrder === 'asc' ? comparison : -comparison;
     });
 
-    return tickets;
-  }, [mockTickets, searchQuery, selectedProject, selectedStatus, selectedPriority, sortField, sortOrder]);
+    return filteredTickets;
+  }, [tickets, searchQuery, selectedProject, selectedStatus, selectedPriority, sortField, sortOrder]);
 
   // Pagination
   const totalPages = Math.ceil(filteredAndSortedTickets.length / ITEMS_PER_PAGE);
@@ -138,6 +167,25 @@ export default function TicketsListPage() {
   };
 
   const canCreateTicket = user?.role === 'qa' || user?.role === 'admin';
+
+  // Helper function to format date
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <DashboardLayout>
+          <LoadingSpinner size="lg" text="Loading tickets..." />
+        </DashboardLayout>
+      </ProtectedRoute>
+    );
+  }
 
   return (
     <ProtectedRoute>
@@ -356,12 +404,12 @@ export default function TicketsListPage() {
                         <td className="px-4 py-3">
                           <PriorityBadge priority={ticket.priority} />
                         </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{ticket.project}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{ticket.author}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{ticket.projectName}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{ticket.authorName}</td>
                         <td className="px-4 py-3 text-sm text-gray-700">
-                          {ticket.assignedTo || <span className="text-gray-400">Unassigned</span>}
+                          {ticket.assignedToName || <span className="text-gray-400">Unassigned</span>}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{ticket.createdAt}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">{formatDate(ticket.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -402,15 +450,15 @@ export default function TicketsListPage() {
                   <div className="space-y-1 text-xs text-gray-600">
                     <div className="flex justify-between">
                       <span className="text-gray-500">Project:</span>
-                      <span className="font-medium">{ticket.project}</span>
+                      <span className="font-medium">{ticket.projectName}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Author:</span>
-                      <span className="font-medium">{ticket.author}</span>
+                      <span className="font-medium">{ticket.authorName}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Assigned:</span>
-                      <span className="font-medium">{ticket.assignedTo || 'Unassigned'}</span>
+                      <span className="font-medium">{ticket.assignedToName || 'Unassigned'}</span>
                     </div>
                   </div>
 

@@ -1,22 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
-import { getTicketById } from '@/lib/mockTickets';
+import { ticketAPI, commentAPI, historyAPI, type Ticket, type Comment, type HistoryEntry } from '@/lib/api';
 import PriorityBadge from '@/components/ui/PriorityBadge';
 import StatusBadge from '@/components/ui/StatusBadge';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import { 
   ArrowLeft, 
   Edit, 
   Trash2, 
-  Calendar, 
-  User, 
-  Clock, 
-  Paperclip,
   Send
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -27,18 +24,63 @@ export default function TicketDetailPage() {
   const { user } = useAuth();
   const ticketId = params.id as string;
   
-  const ticket = getTicketById(ticketId);
+  // State
+  const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState(ticket?.status || 'pending');
+  const [selectedStatus, setSelectedStatus] = useState('pending');
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  // Load ticket data
+  useEffect(() => {
+    const loadTicketData = async () => {
+      try {
+        setLoading(true);
+        
+        // Load ticket, comments, and history in parallel
+        const [ticketData, commentsData, historyData] = await Promise.all([
+          ticketAPI.getById(ticketId),
+          commentAPI.getByTicketId(ticketId),
+          historyAPI.getByTicketId(ticketId)
+        ]);
+
+        setTicket(ticketData);
+        setComments(commentsData);
+        setHistory(historyData);
+        setSelectedStatus(ticketData.status);
+        
+      } catch {
+        toast.error('Failed to load ticket data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (ticketId) {
+      loadTicketData();
+    }
+  }, [ticketId]);
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <DashboardLayout>
+          <LoadingSpinner size="lg" text="Loading ticket..." />
+        </DashboardLayout>
+      </ProtectedRoute>
+    );
+  }
 
   if (!ticket) {
     return (
       <ProtectedRoute>
         <DashboardLayout>
           <div className="flex flex-col items-center justify-center min-h-[60vh]">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Ticket Not Found</h2>
-            <p className="text-gray-600 mb-4">The ticket you're looking for doesn't exist.</p>
+            <h2 className="text-2xl font-bold text-black mb-2">Ticket Not Found</h2>
+            <p className="text-black mb-4">The ticket you're looking for doesn't exist.</p>
             <button
               onClick={() => router.push('/dashboard')}
               className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
@@ -55,20 +97,60 @@ export default function TicketDetailPage() {
   const canDelete = user?.role === 'admin';
   const canUpdateStatus = user?.role === 'developer' || user?.role === 'qa' || user?.role === 'admin';
 
-  const handleDelete = () => {
-    toast.success('Ticket deleted successfully');
-    router.push('/dashboard');
+  const handleDelete = async () => {
+    try {
+      await ticketAPI.delete(ticketId);
+      toast.success('Ticket deleted successfully');
+      router.push('/dashboard');
+    } catch {
+      toast.error('Failed to delete ticket');
+    }
   };
 
-  const handleStatusChange = (newStatus: string) => {
-    setSelectedStatus(newStatus as any);
-    toast.success(`Status updated to ${newStatus}`);
+  const handleStatusChange = async (newStatus: string) => {
+    try {
+      await ticketAPI.updateStatus(ticketId, newStatus);
+      setSelectedStatus(newStatus);
+      setTicket(prev => prev ? { ...prev, status: newStatus as any } : null);
+      toast.success(`Status updated to ${newStatus}`);
+      
+      // Reload history to show the status change
+      const updatedHistory = await historyAPI.getByTicketId(ticketId);
+      setHistory(updatedHistory);
+    } catch {
+      toast.error('Failed to update status');
+    }
   };
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!newComment.trim()) return;
-    toast.success('Comment added successfully');
-    setNewComment('');
+    
+    try {
+      setSubmittingComment(true);
+      const comment = await commentAPI.create(ticketId, {
+        content: newComment.trim(),
+        attachments: []
+      });
+      
+      setComments(prev => [...prev, comment]);
+      setNewComment('');
+      toast.success('Comment added successfully');
+    } catch {
+      toast.error('Failed to add comment');
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
+
+  // Helper function to format date
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   return (
@@ -89,9 +171,9 @@ export default function TicketDetailPage() {
               {canEdit && (
                 <button
                   onClick={() => router.push(`/tickets/${ticketId}/edit`)}
-                  className="flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+                  className="flex items-center text-black gap-2 px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
                 >
-                  <Edit className="w-4 h-4" />
+                  <Edit className="w-4 h-4 text-black" />
                   Edit
                 </button>
               )}
@@ -112,8 +194,8 @@ export default function TicketDetailPage() {
             {/* Title and ID */}
             <div className="mb-4">
               <div className="flex items-start justify-between mb-2">
-                <h1 className="text-2xl font-bold text-gray-900">{ticket.title}</h1>
-                <span className="text-sm text-gray-500">{ticket.id}</span>
+                <h1 className="text-2xl font-bold text-black">{ticket.title}</h1>
+                <span className="text-sm text-black">{ticket.id}</span>
               </div>
               
               {/* Badges */}
@@ -134,23 +216,23 @@ export default function TicketDetailPage() {
             {/* Meta Information */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-4 border-y border-gray-200">
               <div>
-                <div className="text-xs text-gray-500 mb-1">Project</div>
-                <div className="text-sm font-medium text-gray-900">{ticket.project}</div>
+                <div className="text-xs text-black mb-1">Project</div>
+                <div className="text-sm font-medium text-black">{ticket.projectName}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-500 mb-1">Created By</div>
-                <div className="text-sm font-medium text-gray-900">{ticket.author}</div>
+                <div className="text-xs text-black mb-1">Created By</div>
+                <div className="text-sm font-medium text-black">{ticket.authorName}</div>
               </div>
               <div>
-                <div className="text-xs text-gray-500 mb-1">Assigned To</div>
-                <div className="text-sm font-medium text-gray-900">
-                  {ticket.assignedTo || 'Unassigned'}
+                <div className="text-xs text-black mb-1">Assigned To</div>
+                <div className="text-sm font-medium text-black">
+                  {ticket.assignedToName || 'Unassigned'}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-gray-500 mb-1">Deadline</div>
-                <div className="text-sm font-medium text-gray-900">
-                  {ticket.deadline || 'No deadline'}
+                <div className="text-xs text-black mb-1">Deadline</div>
+                <div className="text-sm font-medium text-black">
+                  {ticket.deadline ? formatDate(ticket.deadline) : 'No deadline'}
                 </div>
               </div>
             </div>
@@ -170,7 +252,7 @@ export default function TicketDetailPage() {
                 <select
                   value={selectedStatus}
                   onChange={(e) => handleStatusChange(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                  className="px-3 py-2 border text-black border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
                 >
                   <option value="pending">Pending</option>
                   <option value="assigned">Assigned</option>
@@ -180,8 +262,9 @@ export default function TicketDetailPage() {
               </div>
             )}
 
-            {/* Attachments */}
-            {ticket.attachments.length > 0 && (
+            {/* Attachments - Note: API doesn't support attachments yet */}
+            {/* 
+            {ticket.attachments && ticket.attachments.length > 0 && (
               <div className="py-4 border-t border-gray-200">
                 <h3 className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-2">
                   <Paperclip className="w-4 h-4" />
@@ -203,27 +286,28 @@ export default function TicketDetailPage() {
                 </div>
               </div>
             )}
+            */}
           </div>
 
           {/* Comments Section */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Comments ({ticket.comments.length})
+            <h3 className="text-lg font-semibold text-black mb-4">
+              Comments ({comments.length})
             </h3>
 
             {/* Existing Comments */}
             <div className="space-y-4 mb-4">
-              {ticket.comments.map((comment) => (
+              {comments.map((comment) => (
                 <div key={comment.id} className="border-l-2 border-orange-500 pl-4">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-gray-900">{comment.author}</span>
-                    <span className="text-xs text-gray-500">{comment.createdAt}</span>
+                    <span className="text-sm font-medium text-black">{comment.authorName}</span>
+                    <span className="text-xs text-black">{formatDate(comment.createdAt)}</span>
                   </div>
-                  <p className="text-sm text-gray-700">{comment.content}</p>
+                  <p className="text-sm text-black">{comment.content}</p>
                 </div>
               ))}
-              {ticket.comments.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-4">No comments yet</p>
+              {comments.length === 0 && (
+                <p className="text-sm text-black text-center py-4">No comments yet</p>
               )}
             </div>
 
@@ -234,16 +318,16 @@ export default function TicketDetailPage() {
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder="Add a comment..."
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-black focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none resize-none"
               />
               <div className="flex justify-end mt-2">
                 <button
                   onClick={handleAddComment}
-                  disabled={!newComment.trim()}
+                  disabled={!newComment.trim() || submittingComment}
                   className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                 >
                   <Send className="w-4 h-4" />
-                  Add Comment
+                  {submittingComment ? 'Adding...' : 'Add Comment'}
                 </button>
               </div>
             </div>
@@ -253,18 +337,21 @@ export default function TicketDetailPage() {
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity History</h3>
             <div className="space-y-3">
-              {ticket.history.map((entry) => (
+              {history.map((entry) => (
                 <div key={entry.id} className="flex items-start gap-3">
                   <div className="w-2 h-2 bg-orange-500 rounded-full mt-1.5" />
                   <div className="flex-1">
                     <p className="text-sm text-gray-700">
-                      <span className="font-medium">{entry.user}</span> {entry.action}
+                      <span className="font-medium">{entry.userName}</span> {entry.action}
                       {entry.details && <span className="text-gray-600"> - {entry.details}</span>}
                     </p>
-                    <p className="text-xs text-gray-500 mt-0.5">{entry.timestamp}</p>
+                    <p className="text-xs text-black mt-0.5">{formatDate(entry.timestamp)}</p>
                   </div>
                 </div>
               ))}
+              {history.length === 0 && (
+                <p className="text-sm text-black text-center py-4">No activity history</p>
+              )}
             </div>
           </div>
         </div>

@@ -1,7 +1,6 @@
 'use client';
 
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { RoleGuard } from '@/components/auth/RoleGuard';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import TicketForm from '@/components/tickets/TicketForm';
 import { ArrowLeft } from 'lucide-react';
@@ -12,8 +11,7 @@ export default function CreateTicketPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGuard allowedRoles={['admin', 'qa']}>
-        <DashboardLayout>
+      <DashboardLayout>
           <div className="max-w-4xl mx-auto">
             {/* Header */}
             <div className="mb-6">
@@ -37,7 +35,6 @@ export default function CreateTicketPage() {
             </div>
           </div>
         </DashboardLayout>
-      </RoleGuard>
     </ProtectedRoute>
   );
 }

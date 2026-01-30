@@ -1,45 +1,74 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
-import { RoleGuard } from '@/components/auth/RoleGuard';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import TicketForm from '@/components/tickets/TicketForm';
-import { getTicketById } from '@/lib/mockTickets';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { ticketAPI, type Ticket } from '@/lib/api';
 import { ArrowLeft } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function EditTicketPage() {
   const params = useParams();
   const router = useRouter();
   const ticketId = params.id as string;
   
-  const ticket = getTicketById(ticketId);
+  const [ticket, setTicket] = useState<Ticket | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Load ticket data
+  useEffect(() => {
+    const loadTicket = async () => {
+      try {
+        setLoading(true);
+        const ticketData = await ticketAPI.getById(ticketId);
+        setTicket(ticketData);
+      } catch {
+        toast.error('Failed to load ticket');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (ticketId) {
+      loadTicket();
+    }
+  }, [ticketId]);
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <DashboardLayout>
+          <LoadingSpinner size="lg" text="Loading ticket..." />
+        </DashboardLayout>
+      </ProtectedRoute>
+    );
+  }
 
   if (!ticket) {
     return (
       <ProtectedRoute>
-        <RoleGuard allowedRoles={['admin', 'qa']}>
-          <DashboardLayout>
-            <div className="flex flex-col items-center justify-center min-h-[60vh]">
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Ticket Not Found</h2>
-              <p className="text-gray-600 mb-4">The ticket you're trying to edit doesn't exist.</p>
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-              >
-                Back to Dashboard
-              </button>
-            </div>
-          </DashboardLayout>
-        </RoleGuard>
+        <DashboardLayout>
+          <div className="flex flex-col items-center justify-center min-h-[60vh]">
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Ticket Not Found</h2>
+            <p className="text-gray-600 mb-4">The ticket you're trying to edit doesn't exist.</p>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </DashboardLayout>
       </ProtectedRoute>
     );
   }
 
   return (
     <ProtectedRoute>
-      <RoleGuard allowedRoles={['admin', 'qa']}>
-        <DashboardLayout>
+      <DashboardLayout>
           <div className="max-w-4xl mx-auto">
             {/* Header */}
             <div className="mb-6">
@@ -55,7 +84,7 @@ export default function EditTicketPage() {
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">Edit Ticket</h1>
                   <p className="text-sm text-gray-600 mt-1">
-                    Update ticket details - {ticket.id}
+                    Update ticket details - #{ticket.id}
                   </p>
                 </div>
               </div>
@@ -70,16 +99,15 @@ export default function EditTicketPage() {
                   title: ticket.title,
                   description: ticket.description,
                   priority: ticket.priority,
-                  project: ticket.projectId,
+                  projectId: ticket.projectId,
                   labels: ticket.labels,
-                  assignedTo: ticket.assignedToId,
-                  deadline: ticket.deadline,
+                  assignedToId: ticket.assignedToId,
+                  deadline: ticket.deadline?.split('T')[0], // Convert to YYYY-MM-DD format
                 }}
               />
             </div>
           </div>
         </DashboardLayout>
-      </RoleGuard>
     </ProtectedRoute>
   );
 }
