@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -22,7 +22,7 @@ interface SidebarProps {
   onClose?: () => void;
 }
 
-export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
+const Sidebar = memo(function Sidebar({ isOpen = true, onClose }: SidebarProps) {
   const { user, hasRole, logout } = useAuth();
   const pathname = usePathname();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -50,23 +50,11 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       roles: ['admin'],
     },
     {
-      name: 'Insights',
-      href: '/insights',
-      icon: LayoutDashboard,
-      roles: ['admin', 'qa'],
-    },
-    {
       name: 'Settings',
       href: '/settings',
       icon: Settings,
       roles: ['admin'],
     },
-  ];
-
-  const projects = [
-    { name: 'Preparation: Master Project Soft...', active: true },
-    { name: "Master's Project", active: false },
-    { name: 'Programmeerproject', active: false },
   ];
 
   // Filter navigation based on user role
@@ -117,14 +105,8 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
           </button>
         </div>
 
-        {/* Project Header */}
+        {/* User Info & Actions */}
         <div className="p-4 border-b border-gray-700 flex-shrink-0">
-          <div className="mb-3">
-            <div className="text-sm font-semibold text-white">
-              Project Software Engineering
-            </div>
-          </div>
-          
           <div className="mb-3">
             <div className="text-sm font-medium text-white">
               {user?.name || 'Guest User'}
@@ -239,4 +221,6 @@ export default function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       />
     </>
   );
-}
+});
+
+export default Sidebar;
