@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
-import { Search, Plus, ChevronDown } from 'lucide-react';
+import { Search, ChevronDown } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useNotifications } from '@/context/NotificationContext';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
 import {
   DndContext,
   DragOverlay,
@@ -17,194 +19,48 @@ import {
   useSensors,
   DragStartEvent,
   DragEndEvent,
+  useDroppable,
 } from '@dnd-kit/core';
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { ticketAPI, projectAPI, type Ticket as APITicket, type Project } from '@/lib/api';
 
-// Mock projects
-const projects = [
-  { id: 'all', name: 'All Projects' },
-  { id: 'ecommerce', name: 'E-Commerce Platform' },
-  { id: 'mobile-app', name: 'Mobile App' },
-  { id: 'api-service', name: 'API Service' },
-  { id: 'dashboard', name: 'Dashboard Redesign' },
-];
-
-// Mock ticket data with unique IDs
-interface Ticket {
+// Dashboard ticket interface (simplified from API ticket)
+interface DashboardTicket {
   id: string;
   title: string;
   author: string;
   time: string;
   labels: string[];
   project: string;
+  projectName: string;
   status: string;
 }
 
-const initialTickets: Ticket[] = [
-  {
-    id: 'ticket-17',
-    title: 'How long should the demo be?',
-    author: 'Bryan Student',
-    time: 'Today at 08:33',
-    labels: ['Assignment'],
-    project: 'ecommerce',
-    status: 'pending',
-  },
-  {
-    id: 'ticket-11',
-    title: 'Should the SWEBÖK panel questions I answer...',
-    author: 'Bryan Student',
-    time: 'Yesterday at 23:23',
-    labels: ['SWEBÖK', 'Individual Report', 'e-Journal'],
-    project: 'mobile-app',
-    status: 'pending',
-  },
-  {
-    id: 'ticket-10',
-    title: 'Why are there no project proposals for e-Journal?',
-    author: 'Bryan Student',
-    time: 'Friday at 08:33',
-    labels: ['e-Journal'],
-    project: 'api-service',
-    status: 'pending',
-  },
-  {
-    id: 'ticket-8',
-    title: 'Is there a lecture on the day of the demo?',
-    author: 'Bryan Student',
-    time: 'Wednesday at 17:05',
-    labels: ['Lecture', 'Individual Report'],
-    project: 'dashboard',
-    status: 'pending',
-  },
-  {
-    id: 'ticket-3',
-    title: 'What is the next SWEBÖK panel?',
-    author: 'Yani Student',
-    time: 'Today at 00:08',
-    labels: ['SWEBÖK'],
-    project: 'ecommerce',
-    status: 'assigned',
-  },
-  {
-    id: 'ticket-88',
-    title: 'Was e-Journal founded during this inbox?',
-    author: 'Bryan Student',
-    time: 'Last Saturday at 07:08',
-    labels: ['e-Journal'],
-    project: 'mobile-app',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-77',
-    title: 'Are the SWEBÖK panels related to the book or...',
-    author: 'Bryan Student',
-    time: 'Last Sunday at 06:36',
-    labels: ['SWEBÖK'],
-    project: 'api-service',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-6',
-    title: 'What should the length of the individual report...',
-    author: 'Yani Student',
-    time: 'Last Friday at 08:43',
-    labels: ['Individual Report'],
-    project: 'dashboard',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-7',
-    title: 'Discord does not work on my laptop!',
-    author: 'Yani Student',
-    time: 'Last Friday at 05:08',
-    labels: ['Laptop'],
-    project: 'ecommerce',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-5',
-    title: 'Are there any assignments for this inbox?',
-    author: 'Bryan Student',
-    time: 'Last Wednesday at 23:33',
-    labels: ['Assignment'],
-    project: 'mobile-app',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-4',
-    title: 'Do we have to read SWEBÖK completely?',
-    author: 'Bryan Student',
-    time: 'Last Tuesday at 17:00',
-    labels: ['SWEBÖK'],
-    project: 'api-service',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-66',
-    title: 'What should be the content of the demo?',
-    author: 'Yani Student',
-    time: '08/01/2021 at 07:08',
-    labels: ['Lecture'],
-    project: 'dashboard',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-16',
-    title: 'Should we write the individual report in the pa...',
-    author: 'Bryan Student',
-    time: '08/01/2021 at 03:08',
-    labels: ['Individual Report', 'Assignment'],
-    project: 'ecommerce',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-18',
-    title: 'Should I mention the testing coverage in my r...',
-    author: 'Yani Student',
-    time: '07/04/2021 at 23:33',
-    labels: ['Assignment', 'Individual Report'],
-    project: 'mobile-app',
-    status: 'awaiting',
-  },
-  {
-    id: 'ticket-14',
-    title: 'Do we have to make any smaller assignments?',
-    author: 'Bryan Student',
-    time: '09/27/2021 at 20:08',
-    labels: ['Assignment'],
-    project: 'api-service',
-    status: 'closed',
-  },
-  {
-    id: 'ticket-13',
-    title: 'Which parts of SWEBÖK do we have to read?',
-    author: 'Bryan Student',
-    time: '09/24/2021 at 07:08',
-    labels: ['SWEBÖK'],
-    project: 'dashboard',
-    status: 'closed',
-  },
-  {
-    id: 'ticket-12',
-    title: 'Where can I find the SWEBÖK?',
-    author: 'Yani Student',
-    time: 'Last Friday at 16:08',
-    labels: ['SWEBÖK'],
-    project: 'ecommerce',
-    status: 'closed',
-  },
-];
+// Droppable Column Component
+function DroppableColumn({ id, children }: { id: string; children: React.ReactNode }) {
+  const { setNodeRef } = useDroppable({ id });
+  
+  return (
+    <div ref={setNodeRef} className="space-y-2 min-h-[200px]">
+      {children}
+    </div>
+  );
+}
 
 // Sortable Ticket Card Component
-function SortableTicketCard({ ticket, onClick, onSelfAssign, isDeveloper, isPending }: any) {
+function SortableTicketCard({ ticket, onClick, onSelfAssign, isDeveloper, isPending }: {
+  ticket: DashboardTicket;
+  onClick: () => void;
+  onSelfAssign: (ticketId: string) => void;
+  isDeveloper: boolean;
+  isPending: boolean;
+}) {
   const {
     attributes,
     listeners,
@@ -234,7 +90,7 @@ function SortableTicketCard({ ticket, onClick, onSelfAssign, isDeveloper, isPend
         <h4 className="text-xs font-medium text-gray-900 line-clamp-2 flex-1 leading-tight">
           {ticket.title}
         </h4>
-        <span className="text-[10px] text-gray-500 ml-1.5">{ticket.id.replace('ticket-', '#')}</span>
+        <span className="text-[10px] text-gray-500 ml-1.5">#{ticket.id}</span>
       </div>
 
       {/* Ticket Meta */}
@@ -246,7 +102,7 @@ function SortableTicketCard({ ticket, onClick, onSelfAssign, isDeveloper, isPend
 
       {/* Labels */}
       <div className="flex flex-wrap gap-1">
-        {ticket.labels.map((label, idx) => (
+        {ticket.labels.map((label: string, idx: number) => (
           <span
             key={idx}
             className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700"
@@ -264,9 +120,9 @@ function SortableTicketCard({ ticket, onClick, onSelfAssign, isDeveloper, isPend
               e.stopPropagation();
               onSelfAssign(ticket.id);
             }}
-            className="text-xs text-orange-600 hover:text-orange-700 underline font-medium"
+            className="text-xs text-orange-600 hover:text-orange-700 font-medium"
           >
-            assign yourself
+            Assign yourself
           </button>
         ) : (
           <button 
@@ -283,12 +139,50 @@ function SortableTicketCard({ ticket, onClick, onSelfAssign, isDeveloper, isPend
   );
 }
 
+// Helper function to format date
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInMs = now.getTime() - date.getTime();
+  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+  const diffInDays = Math.floor(diffInHours / 24);
+
+  if (diffInHours < 1) {
+    return 'Just now';
+  } else if (diffInHours < 24) {
+    return `${diffInHours}h ago`;
+  } else if (diffInDays === 1) {
+    return 'Yesterday';
+  } else if (diffInDays < 7) {
+    return `${diffInDays} days ago`;
+  } else {
+    return date.toLocaleDateString();
+  }
+}
+
+// Helper function to convert API ticket to dashboard ticket
+function convertToDashboardTicket(apiTicket: APITicket): DashboardTicket {
+  return {
+    id: apiTicket.id,
+    title: apiTicket.title,
+    author: apiTicket.authorName,
+    time: formatRelativeTime(apiTicket.createdAt),
+    labels: apiTicket.labels,
+    project: apiTicket.projectId,
+    projectName: apiTicket.projectName,
+    status: apiTicket.status,
+  };
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { socket } = useNotifications();
   const router = useRouter();
   
-  // Tickets state
-  const [tickets, setTickets] = useState<Ticket[]>(initialTickets);
+  // State
+  const [tickets, setTickets] = useState<DashboardTicket[]>([]);
+  const [projects, setProjects] = useState<(Project & { id: string })[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   
   // State to track visible ticket count per column
@@ -306,6 +200,80 @@ export default function DashboardPage() {
   // State for search
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Load data on component mount
+  useEffect(() => {
+    const loadData = async () => {
+      // Don't load if no user (logged out)
+      if (!user) return;
+      
+      try {
+        setLoading(true);
+        
+        // Load tickets - all roles can access
+        const ticketsResponse = await ticketAPI.getAll({ limit: 100 });
+        const dashboardTickets = ticketsResponse.tickets.map(convertToDashboardTicket);
+        setTickets(dashboardTickets);
+
+        // Load projects only for QA and Admin
+        if (user && (user.role === 'qa' || user.role === 'admin')) {
+          const projectsResponse = await projectAPI.getAll({ limit: 100 });
+          const projectsWithAll = [
+            { id: 'all', name: 'All Projects', description: '', status: 'active' as const, createdBy: '', teamMembers: [], startDate: '', createdAt: '', updatedAt: '' },
+            ...projectsResponse.projects
+          ];
+          setProjects(projectsWithAll);
+        }
+        
+      } catch (error) {
+        // Only show error if user is still logged in
+        if (user) {
+          toast.error('Failed to load dashboard data');
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [user]);
+
+  // Listen for real-time ticket updates via WebSocket
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleTicketUpdate = (update: any) => {
+      console.log('Ticket update received:', update);
+      
+      // Reload tickets to get latest data
+      const reloadTickets = async () => {
+        try {
+          const ticketsResponse = await ticketAPI.getAll({ limit: 100 });
+          const dashboardTickets = ticketsResponse.tickets.map(convertToDashboardTicket);
+          setTickets(dashboardTickets);
+        } catch (error) {
+          console.error('Failed to reload tickets:', error);
+        }
+      };
+
+      reloadTickets();
+    };
+
+    // Listen for general ticket updates
+    socket.on('ticket:update', handleTicketUpdate);
+
+    // Also listen for custom window events
+    const handleCustomUpdate = () => {
+      handleTicketUpdate({});
+    };
+    
+    window.addEventListener('ticket-updated', handleCustomUpdate);
+
+    return () => {
+      socket.off('ticket:update', handleTicketUpdate);
+      window.removeEventListener('ticket-updated', handleCustomUpdate);
+    };
+  }, [socket]);
+
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -322,19 +290,32 @@ export default function DashboardPage() {
     setActiveId(event.active.id as string);
   };
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     
+    setActiveId(null);
+    
     if (!over) {
-      setActiveId(null);
+      // Ticket was dropped outside any droppable area - do nothing
+      console.log('Dropped outside droppable area');
       return;
     }
 
     const activeTicket = tickets.find(t => t.id === active.id);
     const overColumn = over.id as string;
 
+    // Validate that overColumn is a valid status
+    const validStatuses = ['pending', 'assigned', 'awaiting', 'closed'];
+    if (!validStatuses.includes(overColumn)) {
+      console.log('Invalid drop target:', overColumn);
+      return;
+    }
+
     if (activeTicket && activeTicket.status !== overColumn) {
-      // Update ticket status
+      // Store original status for rollback
+      const originalStatus = activeTicket.status;
+      
+      // Optimistically update UI
       setTickets(prevTickets =>
         prevTickets.map(ticket =>
           ticket.id === active.id
@@ -342,11 +323,24 @@ export default function DashboardPage() {
             : ticket
         )
       );
-      
-      toast.success(`Ticket moved to ${overColumn}`);
-    }
 
-    setActiveId(null);
+      try {
+        // Update ticket status via API
+        await ticketAPI.updateStatus(activeTicket.id, overColumn);
+        toast.success(`Ticket moved to ${overColumn}`);
+      } catch (error) {
+        console.error('Failed to update ticket status:', error);
+        // Revert on error
+        setTickets(prevTickets =>
+          prevTickets.map(ticket =>
+            ticket.id === active.id
+              ? { ...ticket, status: originalStatus }
+              : ticket
+          )
+        );
+        toast.error('Failed to update ticket status');
+      }
+    }
   };
 
   const handleSeeMore = (columnId: string) => {
@@ -380,7 +374,7 @@ export default function DashboardPage() {
 
   // Group tickets by status
   const ticketsByStatus = useMemo(() => {
-    const grouped: Record<string, Ticket[]> = {
+    const grouped: Record<string, DashboardTicket[]> = {
       pending: [],
       assigned: [],
       awaiting: [],
@@ -406,35 +400,76 @@ export default function DashboardPage() {
 
   // Role-based column filtering
   const roleBasedColumns = user?.role === 'developer'
-    ? columns.filter(col => col.id !== 'awaiting')
-    : columns;
+    ? columns.filter(col => col.id !== 'awaiting') // Show pending, assigned, closed for developers
+    : columns; // Show all columns for QA and Admin
 
   // Handle self-assignment for developers
-  const handleSelfAssign = (ticketId: string) => {
-    setTickets(prevTickets =>
-      prevTickets.map(ticket =>
-        ticket.id === ticketId
-          ? { ...ticket, status: 'assigned' }
-          : ticket
-      )
-    );
-    toast.success(`Ticket assigned to you!`);
+  const handleSelfAssign = async (ticketId: string) => {
+    if (!user) return;
+    
+    try {
+      await ticketAPI.assign(ticketId, {
+        assignedToId: user.id,
+        assignedToName: user.name,
+      });
+      
+      setTickets(prevTickets =>
+        prevTickets.map(ticket =>
+          ticket.id === ticketId
+            ? { ...ticket, status: 'assigned' }
+            : ticket
+        )
+      );
+      toast.success('Ticket assigned to you!');
+    } catch {
+      toast.error('Failed to assign ticket');
+    }
   };
   
   // Handle ticket click
   const handleTicketClick = (ticketId: string) => {
-    const ticketNumber = ticketId.replace('ticket-', '');
-    router.push(`/tickets/${ticketNumber}`);
+    router.push(`/tickets/${ticketId}`);
   };
 
   const activeTicket = activeId ? tickets.find(t => t.id === activeId) : null;
 
+  // Calculate developer stats (only for developers)
+  const developerStats = useMemo(() => {
+    if (user?.role !== 'developer') return null;
+
+    const pending = ticketsByStatus.pending?.length || 0;
+    const inProgress = ticketsByStatus.assigned?.length || 0;
+    const completed = ticketsByStatus.closed?.length || 0;
+    const reopened = 0; // You can add this status if needed
+
+    return [
+      { name: 'Pending', value: pending, color: '#FB923C' },
+      { name: 'In Progress', value: inProgress, color: '#F97316' },
+      { name: 'Completed', value: completed, color: '#34D399' },
+      { name: 'Reopened', value: reopened, color: '#60A5FA' },
+    ];
+  }, [ticketsByStatus, user]);
+
+  if (loading) {
+    return (
+      <ProtectedRoute>
+        <DashboardLayout>
+          <LoadingSpinner size="lg" text="Loading dashboard..." />
+        </DashboardLayout>
+      </ProtectedRoute>
+    );
+  }
+
   return (
     <ProtectedRoute>
-      <DashboardLayout>
+      <DashboardLayout 
+        showActivityPanel={true}
+        userRole={user?.role}
+        activityStats={developerStats}
+      >
         <div className="space-y-3">
           {/* Header with Search and Actions */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
             <div className="flex-1 max-w-md">
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -448,7 +483,7 @@ export default function DashboardPage() {
               </div>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-3">
               {/* Project Filter Dropdown - Only for QA and Admin */}
               {user && (user.role === 'qa' || user.role === 'admin') && (
                 <div className="relative">
@@ -468,7 +503,7 @@ export default function DashboardPage() {
                         className="fixed inset-0 z-10" 
                         onClick={() => setIsProjectDropdownOpen(false)}
                       />
-                      <div className="absolute right-0 mt-1 w-48 bg-white border border-black-200 rounded-lg shadow-lg z-20">
+                      <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
                         {projects.map((project) => (
                           <button
                             key={project.id}
@@ -494,14 +529,6 @@ export default function DashboardPage() {
                     </>
                   )}
                 </div>
-              )}
-              
-              {/* My Tickets button - Only for QA and Admin */}
-              {user && (user.role === 'qa' || user.role === 'admin') && (
-                <button className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
-                  <Plus className="w-3.5 h-3.5" />
-                  <span className="text-xs font-medium">My Tickets</span>
-                </button>
               )}
             </div>
           </div>
@@ -529,14 +556,10 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Droppable Area */}
-                    <SortableContext
-                      items={columnTickets.map(t => t.id)}
-                      strategy={verticalListSortingStrategy}
-                      id={column.id}
-                    >
-                      <div 
-                        className="space-y-2 min-h-[200px]"
-                        data-column={column.id}
+                    <DroppableColumn id={column.id}>
+                      <SortableContext
+                        items={columnTickets.map(t => t.id)}
+                        strategy={verticalListSortingStrategy}
                       >
                         {columnTickets.slice(0, visibleCounts[column.id]).map((ticket) => (
                           <SortableTicketCard
@@ -558,8 +581,8 @@ export default function DashboardPage() {
                             See more
                           </button>
                         )}
-                      </div>
-                    </SortableContext>
+                      </SortableContext>
+                    </DroppableColumn>
                   </div>
                 );
               })}
@@ -574,14 +597,14 @@ export default function DashboardPage() {
                       {activeTicket.title}
                     </h4>
                     <span className="text-[10px] text-gray-500 ml-1.5">
-                      {activeTicket.id.replace('ticket-', '#')}
+                      #{activeTicket.id}
                     </span>
                   </div>
                   <div className="text-[10px] text-gray-500 mb-2">
                     <span className="font-medium">{activeTicket.author}</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {activeTicket.labels.map((label, idx) => (
+                    {activeTicket.labels.map((label: string, idx: number) => (
                       <span
                         key={idx}
                         className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700"
