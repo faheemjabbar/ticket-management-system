@@ -21,8 +21,7 @@ export const getStoredUser = () => {
   
   try {
     return JSON.parse(userStr);
-  } catch (error) {
-    console.error('Failed to parse stored user:', error);
+  } catch {
     return null;
   }
 };
@@ -67,8 +66,7 @@ export const decodeToken = (token: string): any => {
         .join('')
     );
     return JSON.parse(jsonPayload);
-  } catch (error) {
-    console.error('Failed to decode token:', error);
+  } catch {
     return null;
   }
 };
@@ -115,7 +113,7 @@ export const getRoleColor = (role: string): string => {
   const colors: Record<string, string> = {
     admin: 'bg-purple-100 text-purple-700',
     developer: 'bg-blue-100 text-blue-700',
-    customer: 'bg-green-100 text-green-700',
+    qa: 'bg-green-100 text-green-700',
   };
   return colors[role] || 'bg-gray-100 text-gray-700';
 };

@@ -1,10 +1,18 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { toast } from 'react-hot-toast';
 
+// Flag to track if user is logging out
+let isLoggingOut = false;
+
+// Export function to set logout state
+export const setLoggingOut = (value: boolean) => {
+  isLoggingOut = value;
+};
+
 // Create axios instance with base configuration
 const axiosInstance = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000',
-  timeout: 10000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -31,27 +39,35 @@ axiosInstance.interceptors.request.use(
 // Response interceptor - handle errors globally
 axiosInstance.interceptors.response.use(
   (response) => {
-    // Return successful response as-is
     return response;
   },
   (error: AxiosError<{ message?: string }>) => {
+    // Don't show error toasts if user is logging out
+    if (isLoggingOut) {
+      return Promise.reject(error);
+    }
+
     // Handle different error status codes
     if (error.response) {
       const { status, data } = error.response;
       
       switch (status) {
         case 401:
-          // Unauthorized - token expired or invalid
-          toast.error('Session expired. Please login again.');
+          // Check if user is on login/register page
+          const isAuthPage = typeof window !== 'undefined' && 
+            (window.location.pathname.includes('/login') || 
+             window.location.pathname.includes('/register'));
           
-          // Clear token and redirect to login
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          
-          // Only redirect if not already on login/register page
-          if (typeof window !== 'undefined' && 
-              !window.location.pathname.includes('/login') && 
-              !window.location.pathname.includes('/register')) {
+          if (isAuthPage) {
+            // On auth pages, show the actual error message from backend
+            toast.error(data?.message || 'Invalid credentials');
+          } else {
+            // On protected pages, it's a session expiry
+            toast.error('Session expired. Please login again.');
+            
+            // Clear token and redirect to login
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
             window.location.href = '/login';
           }
           break;
@@ -84,7 +100,7 @@ axiosInstance.interceptors.response.use(
       }
     } else if (error.request) {
       // Request made but no response received
-      toast.error('Network error. Please check your connection.');
+      toast.error('Cannot connect to server. Please check if backend is running.');
     } else {
       // Something else happened
       toast.error('An unexpected error occurred');

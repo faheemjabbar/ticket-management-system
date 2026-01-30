@@ -2,18 +2,9 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import axiosInstance from '@/lib/axios';
+import axiosInstance, { setLoggingOut } from '@/lib/axios';
 import { toast } from 'react-hot-toast';
-// import { isMockMode, mockLogin, mockRegister, mockGetCurrentUser } from '@/services/mockAuthService';
-
-// User type definition
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: 'admin' | 'developer' | 'qa';
-  isActive: boolean;
-}
+import { User } from '@/types/user.types';
 
 // Auth context type
 interface AuthContextType {
@@ -22,6 +13,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string, role: string) => Promise<void>;
   logout: () => void;
+  updateUser: (updatedUser: Partial<User>) => void;
   isAuthenticated: boolean;
   hasRole: (roles: string[]) => boolean;
 }
@@ -47,12 +39,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedUser = localStorage.getItem('user');
 
       if (token && storedUser) {
-        // Parse stored user
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
       }
     } catch (error) {
-      console.error('Auth initialization error:', error);
+      // Silent error handling
     } finally {
       setLoading(false);
     }
@@ -61,23 +52,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Login function
   const login = async (email: string, password: string) => {
     try {
-      // let response;
-
-      // if (isMockMode()) {
-      //   // Use mock service
-      //   response = await mockLogin(email, password);
-      // } else {
-        // Use real API
-        console.log('🔐 Login attempt:', { email, password: '***' });
-        const res = await axiosInstance.post('/auth/login', {
-          email,
-          password,
-        });
-        console.log('✅ Login response:', res.data);
-        const response = res.data;
-      // }
-
-      const { access_token: token, user } = response;
+      const res = await axiosInstance.post('/auth/login', {
+        email,
+        password,
+      });
+      
+      const { access_token: token, user } = res.data;
 
       // Store token and user in localStorage
       localStorage.setItem('token', token);
@@ -92,17 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Redirect to dashboard
       router.push('/dashboard');
     } catch (error: any) {
-      // Log detailed error for debugging
-      console.error('❌ Login error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-        statusText: error.response?.statusText
-      });
-      
-      // Show error message
-      const message = error.response?.data?.message || 'Login failed. Please try again.';
-      toast.error(message);
+      // Error already handled by axios interceptor
       throw error;
     }
   };
@@ -110,20 +80,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Register function
   const register = async (name: string, email: string, password: string, role: string) => {
     try {
-      // if (isMockMode()) {
-      //   // Use mock service
-      //   await mockRegister({ name, email, password, role: role as any });
-      // } else {
-        // Use real API
-        console.log('📝 Register attempt:', { name, email, role, password: '***' });
-        const res = await axiosInstance.post('/auth/register', {
-          name,
-          email,
-          password,
-          role,
-        });
-        console.log('✅ Register response:', res.data);
-      // }
+      await axiosInstance.post('/auth/register', {
+        name,
+        email,
+        password,
+        role,
+      });
 
       // Show success message
       toast.success('Account created successfully!');
@@ -133,23 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         router.push('/login');
       }, 1000);
     } catch (error: any) {
-      // Log detailed error for debugging
-      console.error('❌ Register error:', {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-        statusText: error.response?.statusText
-      });
-      
-      // Show error message
-      const message = error.response?.data?.message || 'Registration failed. Please try again.';
-      toast.error(message);
+      // Error already handled by axios interceptor
       throw error;
     }
   };
 
   // Logout function
   const logout = () => {
+    // Set flag to prevent error toasts
+    setLoggingOut(true);
+    
     // Clear localStorage
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -162,6 +117,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Redirect to login
     router.push('/login');
+    
+    // Reset flag after navigation
+    setTimeout(() => {
+      setLoggingOut(false);
+    }, 500);
+  };
+
+  // Update user function
+  const updateUser = (updatedUser: Partial<User>) => {
+    if (!user) return;
+    
+    const newUser = { ...user, ...updatedUser };
+    setUser(newUser);
+    localStorage.setItem('user', JSON.stringify(newUser));
   };
 
   // Check if user has specific role(s)
@@ -176,6 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     login,
     register,
     logout,
+    updateUser,
     isAuthenticated: !!user,
     hasRole,
   };
